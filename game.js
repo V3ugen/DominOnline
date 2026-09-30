@@ -144,7 +144,7 @@ class Game extends Screen {
     if (this.isHost) {
       const deck = this.makeDeck(), hp = deck.splice(0, 7), hb = deck.splice(0, 7);
       const first = Math.random() < 0.5 ? 'p' : 'b';
-      this.sendNet({ type: 'init', hand: hb, pool: deck.length, first: first === 'p' ? 'g' : 'h' });
+      this.sendNet({ type: 'init', hand: hb, pool: deck.length, first: first === 'p' ? 'h' : 'g' });
       this.startRound(hp, hb, deck, first);
     } else this.setMsg('Ждём раздачу костяшек…');
   }
@@ -161,7 +161,7 @@ class Game extends Screen {
 
   pump() {
     const c = this.game.netCtx; if (!c || !c.inbox.length) return;
-    const m = c.inbox[0], urgent = ['init', 'restart', 'rematch', 'bye'].includes(m.type);
+    const m = c.inbox[0], urgent = ['init', 'restart', 'rematch', 'bye', 'drew'].includes(m.type);
     if (this.busy && !urgent) return;
     c.inbox.shift(); this.onNet(m);
   }
@@ -178,7 +178,8 @@ class Game extends Screen {
       case 'play': {
         if (this.over || this.turn !== 'b') break;
         const t = m.tile, e = this.ends();
-        this.setMsg('Соперник поставил [' + t[0] + '|' + t[1] + ']' + (e ? (m.side === 'l' ? ' слева' : ' справа') : ''));
+        this.lastOpp = '➜ Соперник поставил [' + t[0] + '|' + t[1] + ']' + (e ? (m.side === 'l' ? ' слева' : ' справа') : '');
+        this.setMsg(this.lastOpp);
         const ho = this.makeTile(t[0], t[1], W / 2, 168).setVisible(false); ho.tile = t;
         this.place('b', ho, m.side); break;
       }
@@ -195,7 +196,7 @@ class Game extends Screen {
       case 'pass':
         this.oppPassPips = m.pips;
         if (this.myPassPips !== null) return void this.finishFish(this.myPassPips, m.pips);
-        this.setMsg('Соперник пропускает ход.'); this.turn = 'p'; this.busy = true;
+        this.lastOpp = '➜ Соперник пропустил ход.'; this.setMsg(this.lastOpp); this.turn = 'p'; this.busy = true;
         this.time.delayedCall(1500, () => { this.busy = false; this.next(); }); break;
     }
   }
@@ -281,7 +282,7 @@ class Game extends Screen {
     this.clearSide();
     if (this.checkEnd()) return;
     this.updateButtons(); this.layoutHand();
-    if (this.turn === 'p') this.say('you');
+    if (this.turn === 'p') { if (this.net && this.lastOpp) this.setMsg(this.lastOpp + '\nВаш ход!'); else this.say('you'); }
     else if (this.net) this.setMsg('Ход соперника… ждём.');
     else { this.say('bot'); this.time.delayedCall(2200, () => this.botMove()); }
   }
@@ -305,6 +306,7 @@ class Game extends Screen {
 
   place(who, ho, side) {
     this.clearSide(); this.busy = true; this.myPassPips = null; this.oppPassPips = null;
+    if (who === 'p') this.lastOpp = null;
     if (who === 'p' && this.net) this.sendNet({ type: 'play', tile: ho.tile, side });
     const t = ho.tile, e = this.ends(); let l, r;
     if (!e) { l = t[0]; r = t[1]; }
@@ -315,7 +317,7 @@ class Game extends Screen {
     else this.removeOpp(t);
     const obj = this.makeTile(l, r, from.x, from.y).setAngle(90).setScale(who === 'p' ? 1.25 : 1);
     const item = { l, r, obj };
-    this.markLast(obj);
+    this.markLast(obj, who);
     side === 'l' && e ? this.board.unshift(item) : this.board.push(item);
     this.drawBot(); this.renderBoard(true);
     this.sfx.draw();
@@ -324,17 +326,18 @@ class Game extends Screen {
       this.tweens.add({ targets: obj, scale: { from: who === 'p' ? 1.15 : 1.6, to: 1 }, duration: who === 'p' ? 150 : 350 });
       this.turn = who === 'p' ? 'b' : 'p'; this.layoutHand();
       // даём прочитать реплику бота; в сети ждём меньше
-      this.time.delayedCall(who === 'p' ? 250 : (this.net ? 600 : 2400), () => { this.busy = false; this.next(); });
+      this.time.delayedCall(who === 'p' ? 250 : (this.net ? 1200 : 2400), () => { this.busy = false; this.next(); });
     });
     this.layoutHand();
   }
 
-  markLast(obj) {
+  markLast(obj, who) {
+    const col = who === 'p' ? 0xffd400 : 0xff7a1a;
     if (this.lastHl) { this.tweens.killTweensOf(this.lastHl); this.lastHl.destroy(); }
     const hl = this.add.graphics();
-    hl.fillStyle(0xffd400, 0.18).fillRoundedRect(-TL / 2, -TH / 2, TL, TH, 5);
-    hl.lineStyle(6, 0xffd400, 0.28).strokeRoundedRect(-TL / 2 - 3, -TH / 2 - 3, TL + 6, TH + 6, 8);
-    hl.lineStyle(2.5, 0xffd400, 1).strokeRoundedRect(-TL / 2 - 1, -TH / 2 - 1, TL + 2, TH + 2, 6);
+    hl.fillStyle(col, 0.18).fillRoundedRect(-TL / 2, -TH / 2, TL, TH, 5);
+    hl.lineStyle(6, col, 0.28).strokeRoundedRect(-TL / 2 - 3, -TH / 2 - 3, TL + 6, TH + 6, 8);
+    hl.lineStyle(2.5, col, 1).strokeRoundedRect(-TL / 2 - 1, -TH / 2 - 1, TL + 2, TH + 2, 6);
     obj.add(hl); this.lastHl = hl;
     this.tweens.add({ targets: hl, alpha: { from: 1, to: 0.45 }, duration: 600, yoyo: true, repeat: -1 });
   }
