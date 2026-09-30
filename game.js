@@ -19,6 +19,7 @@ const SAY = {
   loseNet: ["Соперник выиграл. Ша, бывает! Реванш — это святое!", "Проиграли? Не переживайте, на Привозе и не такое бывает.", "Сегодня не ваш день. Нажмите «Заново» и отыграйтесь!", "Соперник победил. Но вы всё равно красавчик!"],
   draw0: ["Ничья! Как в Одессе: все довольны и никто не доволен.", "Ничья, шо тут скажешь. Разошлись мирно!", "Поровну! Такое бывает только в Одессе."]
 };
+const VER = 'v25';
 const FONT = '"Segoe UI", Roboto, Arial, sans-serif';
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const pips = t => t[0] + t[1];
@@ -161,7 +162,7 @@ class Game extends Screen {
 
   pump() {
     const c = this.game.netCtx; if (!c || !c.inbox.length) return;
-    const m = c.inbox[0], urgent = ['init', 'restart', 'rematch', 'bye', 'drew'].includes(m.type);
+    const m = c.inbox[0], urgent = ['init', 'restart', 'rematch', 'bye', 'drew', 'draw'].includes(m.type);
     if (this.busy && !urgent) return;
     c.inbox.shift(); this.onNet(m);
   }
@@ -189,7 +190,7 @@ class Game extends Screen {
         this.setMsg('Соперник идёт на Привоз…');
         this.sendNet({ type: 'drew', tile: t }); break;
       }
-      case 'drew': this.pool.pop(); this.busy = false; this.gotTile(m.tile); break;
+      case 'drew': if (this.drawWait) { this.drawWait.remove(); this.drawWait = null; } this.pool.pop(); this.busy = false; this.gotTile(m.tile); break;
       case 'oppDrew':
         this.pool.pop(); this.hb.push(null); this.drawBot(); this.updateButtons(); this.sfx.draw();
         this.setMsg('Соперник идёт на Привоз…'); break;
@@ -380,7 +381,11 @@ class Game extends Screen {
 
   takeBazar() {
     if (this.turn !== 'p' || this.busy || !this.pool.length || this.hasMove(this.hp)) return;
-    if (this.net && !this.isHost) { this.busy = true; this.sendNet({ type: 'draw' }); this.updateButtons(); return; }
+    if (this.net && !this.isHost) {
+      this.busy = true; this.sendNet({ type: 'draw' }); this.updateButtons(); this.setMsg('Идём на Привоз… ждём костяшку от хозяина.');
+      this.drawWait = this.time.delayedCall(6000, () => { this.busy = false; this.updateButtons(); this.setMsg('Нет ответа от хозяина комнаты. Нажмите «Привоз» ещё раз.'); });
+      return;
+    }
     const t = this.pool.pop(); this.gotTile(t);
     if (this.net) this.sendNet({ type: 'oppDrew' });
   }
@@ -421,6 +426,7 @@ class Menu extends Screen {
     this.add.text(W / 2, 255, 'по-одесски', { fontFamily: FONT, fontSize: '32px', fontStyle: 'bold', color: '#ffd400' }).setOrigin(0.5);
     this.btn(W / 2, 400, 320, '🤖  Играть с ботом', 0x28a745, () => this.scene.start('game', { mode: 'bot' }), 21);
     this.btn(W / 2, 470, 320, '🌐  Играть по сети', 0x007bff, () => this.scene.start('lobby'), 21);
+    this.add.text(W / 2, 780, 'версия ' + VER, { fontFamily: FONT, fontSize: '13px', color: '#666' }).setOrigin(0.5);
     this.add.text(W / 2, 560, 'Сетевая игра — вдвоём, по коду комнаты.\nНужен интернет у обоих игроков.', { fontFamily: FONT, fontSize: '15px', color: '#aaa', align: 'center' }).setOrigin(0.5);
   }
 }
@@ -437,7 +443,8 @@ class Lobby extends Screen {
   create() {
     this.add.rectangle(W / 2, H / 2, W, H, 0x1a1a1f);
     this.add.text(W / 2, 50, 'ИГРА ПО СЕТИ', { fontFamily: FONT, fontSize: '28px', fontStyle: 'bold', color: '#fff' }).setOrigin(0.5);
-    this.btn(W / 2, 750, 200, '◀ Назад', 0x555566, () => { this.cleanup(); this.scene.start('menu'); });
+    this.add.text(W / 2, 785, 'версия ' + VER, { fontFamily: FONT, fontSize: '13px', color: '#666' }).setOrigin(0.5);
+    this.btn(W / 2, 745, 200, '◀ Назад', 0x555566, () => { this.cleanup(); this.scene.start('menu'); });
     this.items = []; this.peer = null; this.launched = false; this.code = '';
     this.events.on('shutdown', () => { if (!this.launched) this.cleanup(); });
     this.showChoice();
